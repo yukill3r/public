@@ -3,7 +3,9 @@ import pathlib
 import glob
 import os
 import pyunpack
-import stat
+import patoolib
+
+
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -19,8 +21,20 @@ class sort_and_modify:
             try:
                 self.unzipper(file, LOCATION_TO_EXTRACT)
             except:
+                print(f'Unzip failed for file {pathlib.Path(file).stem}')
+                continue
+            try:
+                self.patoolib_unpack(file, LOCATION_TO_EXTRACT)
+            except:
+                print(f'Patoolib failed for file {pathlib.Path(file).stem}')
                 continue
         print('Unzip done')
+
+    def patoolib_unpack(self, file:str, extract_dir:str):
+        extract_dir_extended = os.path.join(extract_dir,pathlib.Path(file).stem)
+        if not os.path.isdir(extract_dir_extended):
+            os.mkdir(extract_dir_extended)
+        patoolib.extract_archive(file, outdir=extract_dir_extended)
 
     def unzipper(self, file:str, extract_dir:str) -> None:
         extract_dir_extended = os.path.join(extract_dir,pathlib.Path(file).stem)
