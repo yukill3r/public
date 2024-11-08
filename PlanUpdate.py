@@ -6,82 +6,52 @@ import hashlib
 import urllib3
 import tempfile
 from urllib.parse import urlparse
+from bs4 import BeautifulSoup
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 BUF_SIZE = 65536
 URL_TO_PLAN = ''
+FILE_NAME = ''
 LOCAL_FILE_LOCATION = pathlib.Path('')
 
 
 class UpdatePlan:
-    _url = None
-    _temporary_location = None
-    _local_file_on_disk = None
-    _debug = False
+    plan_url = None
+    file_name = None
+    file_url = None
 
-    @property
-    def url(self):
-        return self._url
-    
-    @url.setter
-    def url(self, url:str):
-        self._url = url
-    
-    @property
-    def temporary_location(self):
-        return self._temporary_location
-    
-    @temporary_location.setter
-    def temporary_location(self, temp_location:pathlib.Path):
-        self._temporary_location = temp_location
-    
-    @property
-    def debug(self):
-        return self._debug
-
-    @debug.setter
-    def debug(self, debug:bool):
-        self._debug = debug
-
-    @property
-    def local_file_on_disk(self):
-        return self._local_file_on_disk
-    
-    @local_file_on_disk.setter
-    def local_file_on_disk(self, local_file_on_disk):
-        self._local_file_on_disk = local_file_on_disk
-    
-    def __init__(self,
-                 url: str,
-                 local_file_on_disk: pathlib.Path,
-                 debug = False):
-        self.url = url
+    def __init__(self, plan_url: str, file_name: str, local_file_on_disk: str):
+        self.plan_url = plan_url
+        self.file_name = file_name
         self.local_file_on_disk = local_file_on_disk
-        self.debug = debug
+        self.get_selected_file()
         self.temporary_location = pathlib.Path(
-            tempfile.gettempdir()).joinpath(os.path.basename(urlparse(self.url).path))
+            tempfile.gettempdir()).joinpath(os.path.basename(self.file_url))
+        self.download_file()
+        sha256_online = self.check_sha256(self.temporary_location)
+        sha256_local = self.check_sha256(self.local_file_on_disk)
+        if sha256_local != sha256_online:
+            print(f'Different sha256:\nlocal = {sha256_local}\nonline = {sha256_online}')
+            self.update_file()
+        else:
+            print(f'sha256:\nlocal = {sha256_local}\nonline = {sha256_online}')
+        self.cleanup()
 
-        if self.debug:
-            print(f"LocalFile: {self.local_file_on_disk}\nURL:{self.url}\nTemp_Loc:{self.temporary_location}")
-        if (self.url == None or self.local_file_on_disk == None or self.temporary_location == None):
-            return
+    def get_selected_file(self):
+        page = requests.get(self.plan_url)
+        soup = BeautifulSoup(page.text, 'html.parser')
 
-        self.DownloadFile()
+        for a in soup.find_all('a', href=True):
+            if 'https://ans-gniezno.edu.pl/wp-content/uploads/' in a['href'] and self.file_name in a['href']:
+                file_url = a['href']
+        
+        self.file_url = file_url
 
-        sha256_online = self.CheckSHA256(self._Temp_loc)
-        sha256_local = self.CheckSHA256(self._Local_File)
-
-        if (sha256_local != sha256_online):
-            self.UpdateFile()
-
-        self.Cleanup()
-
-
-    def DownloadFile(self) -> None:
-        requested_file = requests.get(self.url, allow_redirects=True, verify=False)
+    def download_file(self) -> None:
+        requested_file = requests.get(self.file_url, allow_redirects=True, verify=False)
         open(self.temporary_location, 'wb').write(requested_file.content)
 
-    def CheckSHA256(self, file: pathlib.Path) -> str:
+    def check_sha256(self, file: pathlib.Path) -> str:
         sha256 = hashlib.sha256()
         with open(file, 'rb') as file:
             while True:
@@ -91,17 +61,17 @@ class UpdatePlan:
                 sha256.update(data)
             return sha256.hexdigest()
     
-    def UpdateFile(self):
+    def update_file(self):
         if os.path.isfile(self.local_file_on_disk):
             os.remove(self.local_file_on_disk)
 
         if os.path.isfile(self.temporary_location):
             shutil.copy2(self.temporary_location, self.local_file_on_disk.parent)
     
-    def Cleanup(self):
+    def cleanup(self):
         if os.path.isfile(self.temporary_location):
             os.remove(self.temporary_location)
 
 
 if __name__ == '__main__':
-    dp = UpdatePlan(URL_TO_PLAN, pathlib.Path(LOCAL_FILE_LOCATION))
+    dp = UpdatePlan(URL_TO_PLAN, FILE_NAME, LOCAL_FILE_LOCATION)
